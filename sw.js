@@ -1,26 +1,11 @@
-/* 我的刻度 · Service Worker
-   目的：让应用可以离线打开、可以安装到桌面。
-   策略：应用外壳预缓存 + 缓存优先；同源其他请求顺手缓存。 */
+/* 小满 · Service Worker
+   策略：网络优先，缓存兜底。保证用户看到最新版，离线也能用。 */
 
-var CACHE = "xiaoman-shell-v3";
-
-var SHELL = [
-  "./index.html",
-  "./manifest.webmanifest",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
-  "./icons/icon-maskable-512.png",
-  "./icons/apple-touch-icon.png"
-];
+var CACHE = "xiaoman-shell-v4";
 
 self.addEventListener("install", function(event){
-  event.waitUntil(
-    caches.open(CACHE).then(function(cache){
-      return cache.addAll(SHELL);
-    }).then(function(){
-      return self.skipWaiting();
-    })
-  );
+  // 不预缓存，避免某个文件加载失败导致 SW 无法激活
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", function(event){
@@ -43,28 +28,35 @@ self.addEventListener("fetch", function(event){
   try{ url = new URL(req.url); }catch(e){ return; }
   if(url.origin !== self.location.origin) return;
 
-  // 导航请求：优先缓存里的外壳，保证离线也能打开
+  // 导航请求（打开页面）：优先网络，失败用缓存
   if(req.mode === "navigate"){
     event.respondWith(
-      caches.match("./index.html").then(function(hit){
-        return hit || fetch(req).catch(function(){ return caches.match("./index.html"); });
-      })
-    );
-    return;
-  }
-
-  event.respondWith(
-    caches.match(req, { ignoreSearch:true }).then(function(hit){
-      if(hit) return hit;
-      return fetch(req).then(function(res){
-        if(res && res.status === 200 && res.type === "basic"){
+      fetch(req).then(function(res){
+        if(res && res.status === 200){
           var copy = res.clone();
           caches.open(CACHE).then(function(cache){ cache.put(req, copy); });
         }
         return res;
       }).catch(function(){
-        return caches.match("./index.html");
-      });
+        return caches.match(req).then(function(hit){
+          return hit || caches.match("./index.html");
+        });
+      })
+    );
+    return;
+  }
+
+  // 静态资源：缓存优先，网络更新
+  event.respondWith(
+    caches.match(req).then(function(hit){
+      var network = fetch(req).then(function(res){
+        if(res && res.status === 200){
+          var copy = res.clone();
+          caches.open(CACHE).then(function(cache){ cache.put(req, copy); });
+        }
+        return res;
+      }).catch(function(){ return hit; });
+      return hit || network;
     })
   );
 });
