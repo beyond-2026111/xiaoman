@@ -2,7 +2,7 @@
    目的：让应用可以离线打开、可以安装到桌面。
    策略：应用外壳预缓存 + 缓存优先；同源其他请求顺手缓存。 */
 
-var CACHE = "my-scale-shell-v2";
+var CACHE = "xiaoman-shell-v3";
 
 var SHELL = [
   "./index.html",
