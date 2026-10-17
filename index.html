@@ -232,6 +232,34 @@
   .body-item.on .dot::after{ content:""; width:6px; height:6px; border-radius:50%; background:#1a1510; }
   .body-footnote{ font-size:12px; color:var(--ink-3); margin-top:12px; line-height:1.7; }
 
+  /* 经期记录 */
+  .period-row{ display:flex; gap:10px; margin-top:14px; }
+  .period-btn{
+    flex:1; padding:14px 8px; border-radius:14px; font-size:14px;
+    background:rgba(28,25,21,.7); border:1px solid var(--line); color:var(--ink-2);
+    cursor:pointer; transition:all .25s; text-align:center;
+  }
+  .period-btn:hover{ transform:translateY(-2px); border-color:var(--gold); }
+  .period-btn.on{ background:var(--gold-bg-strong); border-color:var(--gold); color:var(--gold-3); box-shadow:0 2px 12px rgba(212,176,106,.2); }
+  .period-info{ font-size:13px; color:var(--gold-2); margin-top:12px; line-height:1.7; }
+  .period-stats{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:14px 0; }
+  .period-stats .ps{
+    text-align:center; padding:12px 8px; border-radius:12px;
+    background:rgba(28,25,21,.7); border:1px solid var(--line);
+  }
+  .period-stats .ps .n{ font-size:22px; color:var(--gold-2); font-weight:600; }
+  .period-stats .ps .l{ font-size:11px; color:var(--ink-3); margin-top:4px; }
+  .period-setting{ display:flex; align-items:center; gap:10px; margin-bottom:14px; font-size:13px; color:var(--ink-2); }
+  .period-setting input{ background:rgba(0,0,0,.3); border:1px solid var(--line); border-radius:8px; color:var(--gold-2); padding:6px 8px; text-align:center; font-size:14px; }
+  .period-history{ font-size:13px; color:var(--ink-2); }
+  .period-history .ph-item{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:10px 0; border-bottom:1px solid var(--line);
+  }
+  .period-history .ph-item:last-child{ border-bottom:none; }
+  .period-history .ph-date{ color:var(--ink-2); }
+  .period-history .ph-dur{ color:var(--gold-2); font-size:12px; }
+
   /* ============ 呼吸页 ============ */
   .breath-stage{ display:flex; flex-direction:column; align-items:center; padding:40px 0 12px; }
   .orb{
@@ -498,6 +526,17 @@
       </div>
 
       <div class="block">
+        <h2>经期记录</h2>
+        <p class="sub">如实记一下就好，身体会告诉你它的节奏。</p>
+        <div class="period-row" id="periodRow">
+          <button class="period-btn" data-period="start" aria-label="来了">🩸 来了</button>
+          <button class="period-btn" data-period="ongoing" aria-label="姨妈中">🌊 姨妈中</button>
+          <button class="period-btn" data-period="end" aria-label="走了">🌸 走了</button>
+        </div>
+        <p class="period-info" id="periodInfo"></p>
+      </div>
+
+      <div class="block">
         <h2>今天的身体</h2>
         <p class="sub">不是打卡。只是确认：你今天，有没有被好好对待。</p>
         <div class="body-grid" id="bodyGrid"></div>
@@ -623,6 +662,18 @@
         <p class="sub">这里的每一格都只和你有关，和任何人都无关。</p>
         <div id="weekBars"></div>
         <p class="sub" style="font-size:13px" id="weekTip"></p>
+      </div>
+
+      <div class="block">
+        <h2>经期档案</h2>
+        <p class="sub">看见自己的周期，比什么都踏实。</p>
+        <div class="period-stats" id="periodStats"></div>
+        <div class="period-setting">
+          <label>平均周期 <input id="cycleLen" type="number" min="21" max="40" value="28" style="width:60px"> 天</label>
+          <button class="btn-ghost" id="saveCycle" style="flex:none">保存</button>
+        </div>
+        <p class="nudge" id="periodNudge"></p>
+        <div class="period-history" id="periodHistory"></div>
       </div>
 
       <div class="block">
@@ -771,13 +822,15 @@
   var BODY_LABELS = {food:"好好吃了饭",water:"喝够了水",sleep:"睡够了6小时",move:"动了一动",sun:"见了太阳"};
 
   var state = { version:1, nickname:"", days:{}, breathCycles:0, focusMinutes:0, reframeCount:0,
-                compassion:[], thoughts:[], actions:[], emergency:null };
+                compassion:[], thoughts:[], actions:[], emergency:null,
+                periodCycles:[], periodSettings:{cycleLength:28, periodLength:5} };
 
   function normalizeDay(d){
     d = d || {};
     var body = d.body || {};
     var nb = {};
     BODY_KEYS.forEach(function(k){ nb[k] = !!body[k]; });
+    var period = (d.period==="start"||d.period==="ongoing"||d.period==="end") ? d.period : null;
     return {
       mood: (typeof d.mood==="number"&&d.mood>=1&&d.mood<=5) ? d.mood : null,
       oneThing: typeof d.oneThing==="string" ? d.oneThing : "",
@@ -785,7 +838,8 @@
       body: nb,
       connection: typeof d.connection==="string" ? d.connection : "",
       goodthings: Array.isArray(d.goodthings) ? d.goodthings.filter(function(g){return g&&g.t&&g.t.trim();}) : [],
-      stars: Array.isArray(d.stars) ? d.stars.filter(function(s){return s&&s.t&&s.t.trim();}) : []
+      stars: Array.isArray(d.stars) ? d.stars.filter(function(s){return s&&s.t&&s.t.trim();}) : [],
+      period: period
     };
   }
 
@@ -806,6 +860,8 @@
           state.thoughts = Array.isArray(p.thoughts) ? p.thoughts : [];
           state.actions = Array.isArray(p.actions) ? p.actions : [];
           state.emergency = p.emergency || null;
+          state.periodCycles = Array.isArray(p.periodCycles) ? p.periodCycles : [];
+          state.periodSettings = p.periodSettings || {cycleLength:28, periodLength:5};
           return;
         }
       }catch(e){}
@@ -815,12 +871,13 @@
   function persist(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
   function day(k){
     if(!state.days[k]) state.days[k] = { mood:null, oneThing:"", oneThingDone:false,
-      body:{food:false,water:false,sleep:false,move:false,sun:false}, connection:"", goodthings:[], stars:[] };
+      body:{food:false,water:false,sleep:false,move:false,sun:false}, connection:"", goodthings:[], stars:[], period:null };
     var d=state.days[k];
     if(!d.body){ d.body={food:false,water:false,sleep:false,move:false,sun:false}; }
     ["connection","oneThing"].forEach(function(f){ if(typeof d[f]!=="string") d[f]=""; });
     if(!d.goodthings) d.goodthings=[];
     if(!d.stars) d.stars=[];
+    if(d.period!=="start"&&d.period!=="ongoing"&&d.period!=="end") d.period=null;
     return d;
   }
   var todayKey = dateKey(new Date());
@@ -901,8 +958,85 @@
     else if(tStars === yStars) tip.textContent = "和昨天一样，稳着来就好。";
     else tip.textContent = "比昨天少 "+(yStars-tStars)+" 颗也没关系，明天再来。";
 
-    renderBody(); renderConn(); renderGoodThings();
+    renderPeriod(); renderBody(); renderConn(); renderGoodThings();
   }
+
+  /* 经期记录 */
+  function renderPeriod(){
+    var p = day(todayKey).period;
+    document.querySelectorAll(".period-btn").forEach(function(b){
+      b.classList.toggle("on", b.dataset.period === p);
+    });
+    var info = document.getElementById("periodInfo");
+    var last = getLastPeriodStart();
+    var cycleLen = state.periodSettings.cycleLength || 28;
+    if(p === "start" || p === "ongoing"){
+      var startDay = last ? keyToDate(last) : new Date();
+      var dayOfPeriod = Math.floor((new Date() - startDay)/86400000) + 1;
+      info.textContent = "经期第 " + dayOfPeriod + " 天。好好休息，别逞强。";
+    } else if(last){
+      var next = predictNextPeriod();
+      var diff = Math.ceil((next - new Date())/86400000);
+      if(diff > 0) info.textContent = "距离下次经期大约还有 " + diff + " 天。";
+      else if(diff === 0) info.textContent = "预计就是这两天了，准备好。";
+      else info.textContent = "比预计晚了 " + (-diff) + " 天，别急，再等等看。";
+    } else {
+      info.textContent = "还没有记录。第一次来的时候点「来了」就好。";
+    }
+  }
+
+  function getLastPeriodStart(){
+    if(!state.periodCycles.length) return null;
+    var sorted = state.periodCycles.slice().sort(function(a,b){ return b.start.localeCompare(a.start); });
+    return sorted[0].start;
+  }
+
+  function predictNextPeriod(){
+    var last = getLastPeriodStart();
+    var cycleLen = state.periodSettings.cycleLength || 28;
+    if(!last){ last = dateKey(new Date()); }
+    var d = keyToDate(last);
+    d.setDate(d.getDate() + cycleLen);
+    return d;
+  }
+
+  function setPeriod(status){
+    var d = day(todayKey);
+    // 再次点击同一状态则取消
+    if(d.period === status){ d.period = null; }
+    else { d.period = status; }
+
+    // 更新 periodCycles
+    if(d.period === "start"){
+      // 检查今天是否已经在某个周期里
+      var exists = state.periodCycles.some(function(c){ return c.start === todayKey; });
+      if(!exists){
+        // 关闭上一个未结束的周期
+        state.periodCycles.forEach(function(c){
+          if(!c.end) c.end = dateKey(shift(keyToDate(todayKey), -1));
+        });
+        state.periodCycles.push({start: todayKey, end: null});
+      }
+    } else if(d.period === "end"){
+      // 标记最近的未结束周期为今天结束
+      var openCycle = state.periodCycles.filter(function(c){ return !c.end; })
+        .sort(function(a,b){ return b.start.localeCompare(a.start); })[0];
+      if(openCycle){ openCycle.end = todayKey; }
+      else {
+        // 没有进行中的周期，创建一个以今天为结束的
+        state.periodCycles.push({start: todayKey, end: todayKey});
+      }
+    }
+    // "ongoing" 不改 cycles，只标记当天状态
+
+    persist(); renderPeriod();
+  }
+
+  document.getElementById("periodRow").addEventListener("click", function(e){
+    var b = e.target.closest(".period-btn");
+    if(!b) return;
+    setPeriod(b.dataset.period);
+  });
 
   document.getElementById("moodRow").addEventListener("click", function(e){
     var b = e.target.closest(".mood-btn");
@@ -1177,12 +1311,77 @@
     // 周对比
     renderWeekBars();
 
+    // 经期档案
+    renderPeriodMine();
+
     // 行动清单
     renderActions();
 
     // 紧急联系
     renderEmergency();
   }
+
+  function renderPeriodMine(){
+    var cycles = state.periodCycles;
+    var statsEl = document.getElementById("periodStats");
+    var histEl = document.getElementById("periodHistory");
+    var cycleInput = document.getElementById("cycleLen");
+
+    cycleInput.value = state.periodSettings.cycleLength || 28;
+
+    // 统计：记录次数、平均经期天数、平均周期
+    var recordedCount = cycles.length;
+    var closedCycles = cycles.filter(function(c){ return c.end; });
+    var avgPeriodLen = 0, avgCycleLen = 0;
+    if(closedCycles.length){
+      var totalDur = closedCycles.reduce(function(s,c){
+        return s + Math.floor((keyToDate(c.end) - keyToDate(c.start))/86400000) + 1;
+      }, 0);
+      avgPeriodLen = Math.round(totalDur / closedCycles.length);
+    }
+    if(cycles.length >= 2){
+      var sorted = cycles.slice().sort(function(a,b){ return a.start.localeCompare(b.start); });
+      var gaps = [];
+      for(var i=1;i<sorted.length;i++){
+        gaps.push(Math.floor((keyToDate(sorted[i].start) - keyToDate(sorted[i-1].start))/86400000));
+      }
+      if(gaps.length){
+        avgCycleLen = Math.round(gaps.reduce(function(s,g){return s+g;},0) / gaps.length);
+      }
+    }
+
+    statsEl.innerHTML =
+      '<div class="ps"><div class="n">'+recordedCount+'</div><div class="l">记录次数</div></div>'+
+      '<div class="ps"><div class="n">'+(avgPeriodLen||"-")+'</div><div class="l">平均经期</div></div>'+
+      '<div class="ps"><div class="n">'+(avgCycleLen || state.periodSettings.cycleLength)+'</div><div class="l">平均周期</div></div>';
+
+    // 历史列表（倒序，最近的在前）
+    var sorted = cycles.slice().sort(function(a,b){ return b.start.localeCompare(a.start); });
+    if(!sorted.length){
+      histEl.innerHTML = '<p class="sub" style="margin-top:8px">还没有记录。在「今天」页点「来了」开始记录吧。</p>';
+    } else {
+      var html = "";
+      sorted.slice(0, 12).forEach(function(c){
+        var dur = c.end ? (Math.floor((keyToDate(c.end) - keyToDate(c.start))/86400000)+1) + " 天" : "进行中";
+        var sd = keyToDate(c.start);
+        var ed = c.end ? keyToDate(c.end) : null;
+        var dateStr = (sd.getMonth()+1)+"/"+sd.getDate();
+        if(ed) dateStr += " — " + (ed.getMonth()+1)+"/"+ed.getDate();
+        html += '<div class="ph-item"><span class="ph-date">'+dateStr+'</span><span class="ph-dur">'+dur+'</span></div>';
+      });
+      histEl.innerHTML = html;
+    }
+  }
+
+  document.getElementById("saveCycle").addEventListener("click", function(){
+    var v = parseInt(document.getElementById("cycleLen").value, 10);
+    if(v >= 21 && v <= 40){
+      state.periodSettings.cycleLength = v;
+      persist();
+      showNudge("periodNudge","周期长度已保存。");
+      renderPeriodMine();
+    }
+  });
 
   function renderMoodChart(){
     var days=[];
